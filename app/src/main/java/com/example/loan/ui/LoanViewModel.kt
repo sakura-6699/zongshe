@@ -17,6 +17,7 @@ import javax.inject.Named
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -34,6 +35,18 @@ class LoanViewModel @Inject constructor(
 
     private val submitting = MutableStateFlow(false)
     private val error = MutableStateFlow<UiError?>(null)
+
+    init {
+        // 进程可能在机审 delay 期间被杀，留下永久 PENDING；启动时立即补完机审判定
+        viewModelScope.launch {
+            val user = userRepository.getFirstUser().first() ?: return@launch
+            loanRepository.getLoans().first()
+                .filter { it.status == LoanStatus.PENDING }
+                .forEach { loan ->
+                    loanRepository.updateLoanStatus(loan.id, reviewDecision(loan.principal, user))
+                }
+        }
+    }
 
     val uiState: StateFlow<LoanUiState> =
         combine(
@@ -82,12 +95,7 @@ class LoanViewModel @Inject constructor(
                     ),
                 )
                 delay(reviewDelayMillis) // 模拟机审网络请求
-                val status = if (principal > user.creditLimit) {
-                    LoanStatus.REJECTED
-                } else {
-                    LoanStatus.APPROVED
-                }
-                loanRepository.updateLoanStatus(loanId, status)
+                loanRepository.updateLoanStatus(loanId, reviewDecision(principal, user))
             } catch (e: Exception) {
                 error.update { UiError.Unknown(e.message ?: "机审失败") }
             } finally {
@@ -128,6 +136,10 @@ class LoanViewModel @Inject constructor(
         error.update { null }
     }
 
+    /** 机审判定：超过信用额度即拒绝（init 补审与正常申请共用同一规则） */
+    private fun reviewDecision(principal: Double, user: User): LoanStatus =
+        if (principal > user.creditLimit) LoanStatus.REJECTED else LoanStatus.APPROVED
+
     private suspend fun buildUiState(
         user: User?,
         loans: List<Loan>,
@@ -145,6 +157,7 @@ class LoanViewModel @Inject constructor(
                 hasOverdue = schedules.any { LoanRules.isOverdue(it, today) },
                 totalDue = schedules.filter { !it.isPaid }.sumOf { it.amountDue },
                 totalPaid = schedules.filter { it.isPaid }.sumOf { it.amountDue },
+                today = today,
             )
         }
         // 状态写回 DB：还款后结算 / 因时间流逝逾期 / 逾期还清恢复，均由同一规则驱动

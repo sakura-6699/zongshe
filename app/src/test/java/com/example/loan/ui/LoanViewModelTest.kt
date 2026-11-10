@@ -137,6 +137,20 @@ class LoanViewModelTest {
         assertEquals(UiError.UserMissing, vm.uiState.value.error)
     }
 
+    @Test
+    fun `init completes stuck pending review - no delay replay`() = runTest {
+        bindMainDispatcher()
+        loanRepo.loansFlow.value = listOf(
+            Loan(id = 1, userId = 1, principal = 3_000.0, annualRateBp = 780, termMonths = 3, startDate = today, status = LoanStatus.PENDING),
+        )
+        // 机审延迟设为 1 秒：补审不应重放 delay，advanceUntilIdle 即完成
+        val vm = LoanViewModel(userRepo, loanRepo, clock, reviewDelayMillis = 1_000)
+        collectState(vm)
+        advanceUntilIdle()
+
+        assertEquals(LoanStatus.APPROVED, loanRepo.loansFlow.value.first().status)
+    }
+
     // ---- 确认放款 ----
 
     @Test
@@ -260,6 +274,86 @@ class LoanViewModelTest {
         advanceUntilIdle()
 
         assertEquals(LoanStatus.ACTIVE, loanRepo.loansFlow.value.first().status)
+    }
+
+    // ---- 屏幕推导 ----
+
+    @Test
+    fun `screen - no loans shows ApplyForm without hint`() = runTest {
+        bindMainDispatcher()
+        val vm = LoanViewModel(userRepo, loanRepo, clock, reviewDelayMillis = 0)
+        collectState(vm)
+        advanceUntilIdle()
+
+        assertEquals(LoanScreen.ApplyForm(showRejectedHint = false), vm.uiState.value.screen)
+    }
+
+    @Test
+    fun `screen - rejected loan shows ApplyForm with hint`() = runTest {
+        bindMainDispatcher()
+        loanRepo.loansFlow.value = listOf(
+            Loan(id = 1, userId = 1, principal = 6_000.0, annualRateBp = 780, termMonths = 3, startDate = today, status = LoanStatus.REJECTED),
+        )
+        val vm = LoanViewModel(userRepo, loanRepo, clock, reviewDelayMillis = 0)
+        collectState(vm)
+        advanceUntilIdle()
+
+        assertEquals(LoanScreen.ApplyForm(showRejectedHint = true), vm.uiState.value.screen)
+    }
+
+    @Test
+    fun `screen - pending loan shows Reviewing`() = runTest {
+        bindMainDispatcher()
+        val vm = LoanViewModel(userRepo, loanRepo, clock, reviewDelayMillis = 1_000)
+        collectState(vm)
+        advanceUntilIdle()
+
+        vm.applyForLoan(principal = 3_000.0, termMonths = 3, annualRateBp = 780)
+        runCurrent() // 停在机审 delay 中，贷款处于 PENDING
+
+        assertEquals(LoanScreen.Reviewing, vm.uiState.value.screen)
+    }
+
+    @Test
+    fun `screen - approved loan shows ApprovePending`() = runTest {
+        bindMainDispatcher()
+        loanRepo.loansFlow.value = listOf(
+            Loan(id = 1, userId = 1, principal = 3_000.0, annualRateBp = 780, termMonths = 3, startDate = today, status = LoanStatus.APPROVED),
+        )
+        val vm = LoanViewModel(userRepo, loanRepo, clock, reviewDelayMillis = 0)
+        collectState(vm)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.screen is LoanScreen.ApprovePending)
+    }
+
+    @Test
+    fun `screen - approved loan takes priority over active`() = runTest {
+        bindMainDispatcher()
+        loanRepo.loansFlow.value = listOf(
+            Loan(id = 1, userId = 1, principal = 3_000.0, annualRateBp = 780, termMonths = 3, startDate = today, status = LoanStatus.APPROVED),
+            Loan(id = 2, userId = 1, principal = 3_000.0, annualRateBp = 780, termMonths = 3, startDate = today, status = LoanStatus.ACTIVE),
+        )
+        val vm = LoanViewModel(userRepo, loanRepo, clock, reviewDelayMillis = 0)
+        collectState(vm)
+        advanceUntilIdle()
+
+        val screen = vm.uiState.value.screen
+        assertTrue(screen is LoanScreen.ApprovePending)
+        assertEquals(1L, (screen as LoanScreen.ApprovePending).loan.loan.id)
+    }
+
+    @Test
+    fun `screen - settled loan shows Settled`() = runTest {
+        bindMainDispatcher()
+        loanRepo.loansFlow.value = listOf(
+            Loan(id = 1, userId = 1, principal = 3_000.0, annualRateBp = 780, termMonths = 3, startDate = today, status = LoanStatus.SETTLED),
+        )
+        val vm = LoanViewModel(userRepo, loanRepo, clock, reviewDelayMillis = 0)
+        collectState(vm)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.screen is LoanScreen.Settled)
     }
 
     // ---- 测试用内存 Fake ----

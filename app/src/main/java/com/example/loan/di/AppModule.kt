@@ -5,7 +5,6 @@ import androidx.room.Room
 import com.example.loan.data.local.dao.LoanDao
 import com.example.loan.data.local.dao.RepaymentScheduleDao
 import com.example.loan.data.local.dao.UserDao
-import com.example.loan.data.local.db.DatabaseSeeder
 import com.example.loan.data.local.db.LoanDatabase
 import dagger.Module
 import dagger.Provides
