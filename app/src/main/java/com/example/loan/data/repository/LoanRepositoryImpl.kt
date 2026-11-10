@@ -7,10 +7,12 @@ import com.example.loan.data.local.db.LoanDatabase
 import com.example.loan.data.local.entity.LoanEntity
 import com.example.loan.data.local.entity.RepaymentScheduleEntity
 import com.example.loan.domain.model.Loan
+import com.example.loan.domain.model.LoanStatus
 import com.example.loan.domain.model.RepaymentSchedule
 import com.example.loan.domain.repository.LoanRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,6 +30,11 @@ class LoanRepositoryImpl @Inject constructor(
             entities.map { it.toDomain() }
         }
 
+    override fun getAllSchedules(): Flow<List<RepaymentSchedule>> =
+        repaymentScheduleDao.getAllSchedules().map { entities ->
+            entities.map { it.toDomain() }
+        }
+
     override suspend fun insertLoanWithSchedules(
         loan: Loan,
         schedules: List<RepaymentSchedule>,
@@ -38,6 +45,32 @@ class LoanRepositoryImpl @Inject constructor(
         )
         loanId
     }
+
+    override suspend fun insertLoan(loan: Loan): Long =
+        loanDao.insert(loan.toEntity())
+
+    override suspend fun updateLoanStatus(loanId: Long, status: LoanStatus) =
+        loanDao.updateStatus(loanId, status.name)
+
+    override suspend fun markSchedulePaid(scheduleId: Long) =
+        repaymentScheduleDao.markPaid(scheduleId)
+
+    override suspend fun activateLoan(loanId: Long, today: LocalDate): Boolean =
+        db.withTransaction {
+            val loan = loanDao.getLoanById(loanId) ?: return@withTransaction false
+            if (loan.status != LoanStatus.APPROVED) return@withTransaction false
+            repaymentScheduleDao.insertAll(
+                RepaymentPlanCalculator.buildSchedules(
+                    loanId = loanId,
+                    principal = loan.principal,
+                    annualRateBp = loan.annualRateBp,
+                    termMonths = loan.termMonths,
+                    startDate = today,
+                ),
+            )
+            loanDao.updateStatus(loanId, LoanStatus.ACTIVE.name)
+            true
+        }
 }
 
 private fun LoanEntity.toDomain(): Loan = Loan(

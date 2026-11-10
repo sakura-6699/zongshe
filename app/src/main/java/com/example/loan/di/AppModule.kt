@@ -15,6 +15,8 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import java.time.Clock
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -25,6 +27,14 @@ object AppModule {
     @Singleton
     fun provideApplicationScope(): CoroutineScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    @Provides
+    @Singleton
+    fun provideClock(): Clock = Clock.systemDefaultZone()
+
+    @Provides
+    @Named("reviewDelayMillis")
+    fun provideReviewDelayMillis(): Long = 1_000
 
     @Provides
     @Singleton

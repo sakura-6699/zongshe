@@ -12,6 +12,12 @@ interface LoanDao {
     @Query("SELECT * FROM loans ORDER BY startDate DESC")
     fun getLoans(): Flow<List<LoanEntity>>
 
+    @Query("SELECT * FROM loans WHERE id = :loanId")
+    suspend fun getLoanById(loanId: Long): LoanEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(loan: LoanEntity): Long
+
+    @Query("UPDATE loans SET status = :status WHERE id = :loanId")
+    suspend fun updateStatus(loanId: Long, status: String)
 }

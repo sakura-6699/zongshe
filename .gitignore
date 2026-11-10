@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# IDE 配置不入库
+.idea/

@@ -4,6 +4,7 @@ package com.example.loan.domain.model
 enum class LoanStatus {
     PENDING,
     APPROVED,
+    REJECTED,
     ACTIVE,
     SETTLED,
     OVERDUE,
